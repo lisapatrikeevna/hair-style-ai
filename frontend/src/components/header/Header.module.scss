@@ -1,0 +1,11 @@
+.header {
+  backdrop-filter: blur(8px);
+  background-color: var(--mui-palette-background-paper);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.logo {
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--mui-palette-primary-main);
+}

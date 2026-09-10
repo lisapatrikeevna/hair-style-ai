@@ -1,0 +1,47 @@
+
+.card {
+  background-color: var(--mui-palette-background-paper);
+  color: var(--mui-palette-text-primary);
+  border: 1px solid var(--mui-palette-primary-main);
+}
+.container {
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+
+.heroTitle {
+  margin-bottom: 16px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--mui-palette-text-primary);
+}
+
+.heroSubtitle {
+  margin-bottom: 48px;
+  text-align: center;
+  color: var(--mui-palette-text-secondary);
+}
+
+.card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+
+  &:hover {
+    transform: translateY(-4px);
+  }
+}
+
+.disabledCard {
+  opacity: 0.6;
+  filter: grayscale(0.5);
+  pointer-events: none;
+}
+
+.badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}

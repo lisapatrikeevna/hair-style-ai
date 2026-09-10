@@ -1,0 +1,21 @@
+# PyCharm & IDE settings
+backend/.idea/
+*.iws
+*.iml
+*.ipr
+
+# Python / Django
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+db.sqlite3
+media/
+
+# Node.js / React
+node_modules/
+dist/
+.env.local
+
+# private
+zzz.txt
