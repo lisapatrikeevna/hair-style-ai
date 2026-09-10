@@ -1,0 +1,52 @@
+.container {
+  padding-top: 40px;
+  padding-bottom: 40px;
+}
+
+.title {
+  margin-bottom: 8px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--mui-palette-text-primary);
+}
+
+.subtitle {
+  margin-bottom: 32px;
+  text-align: center;
+  color: var(--mui-palette-text-secondary);
+}
+
+.dropZone {
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  background-color: var(--mui-palette-background-paper);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+
+  &:hover {
+    border-color: var(--mui-palette-primary-main);
+    background-color: rgba(0, 134, 194, 0.04);
+  }
+}
+
+.dragActive {
+  border-color: var(--mui-palette-primary-main);
+  background-color: rgba(0, 134, 194, 0.08);
+}
+
+.previewImage {
+  width: 100%;
+  height: 260px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 32px;
+}
