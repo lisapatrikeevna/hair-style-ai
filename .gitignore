@@ -4,6 +4,7 @@ backend/.idea/
 *.iml
 *.ipr
 
+
 # Python / Django
 .venv/
 venv/
@@ -11,6 +12,7 @@ __pycache__/
 *.py[cod]
 db.sqlite3
 media/
+backend/.env
 
 # Node.js / React
 node_modules/

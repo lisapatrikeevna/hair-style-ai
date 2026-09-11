@@ -19,9 +19,10 @@ export const BRAND_COLORS = {
   },
 };
 
-
 export const theme = createTheme({
-  cssVariables: true,
+  cssVariables: {
+    colorSchemeSelector: 'class', // Adds .mui-mode-light / .mui-mode-dark to html element
+  },
   colorSchemes: {
     light: {
       palette: {
@@ -30,11 +31,11 @@ export const theme = createTheme({
         secondary: { main: BRAND_COLORS.light.secondary },
         background: {
           default: BRAND_COLORS.light.bgDefault,
-          paper: BRAND_COLORS.light.bgPaper
+          paper: BRAND_COLORS.light.bgPaper,
         },
         text: {
           primary: BRAND_COLORS.light.textPrimary,
-          secondary: BRAND_COLORS.light.textSecondary
+          secondary: BRAND_COLORS.light.textSecondary,
         },
       },
     },
@@ -45,26 +46,13 @@ export const theme = createTheme({
         secondary: { main: BRAND_COLORS.dark.secondary },
         background: {
           default: BRAND_COLORS.dark.bgDefault,
-          paper: BRAND_COLORS.dark.bgPaper
+          paper: BRAND_COLORS.dark.bgPaper,
         },
         text: {
           primary: BRAND_COLORS.dark.textPrimary,
-          secondary: BRAND_COLORS.dark.textSecondary
+          secondary: BRAND_COLORS.dark.textSecondary,
         },
       },
-    },
-  },
-  typography: {
-    fontFamily: [
-      '-apple-system',
-      'BlinkMacSystemFont',
-      '"Segoe UI"',
-      'Roboto',
-      'sans-serif',
-    ].join(','),
-    button: {
-      textTransform: 'none',
-      fontWeight: 600,
     },
   },
 });

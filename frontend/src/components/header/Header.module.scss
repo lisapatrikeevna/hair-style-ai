@@ -1,11 +1,34 @@
-.header {
-  backdrop-filter: blur(8px);
-  background-color: var(--mui-palette-background-paper);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
+// Header.module.scss
 
-.logo {
-  font-weight: 700;
-  cursor: pointer;
-  color: var(--mui-palette-primary-main);
+.header {
+  // Styles for the main AppBar container
+  background-color: var(--mui-palette-background-paper) !important;
+  color: var(--mui-palette-text-primary) !important;
+  border-bottom: 1px solid var(--mui-palette-divider);
+  transition: background-color 0.3s ease, color 0.3s ease;
+
+  // Nested elements inside Header
+  .logo {
+    cursor: pointer;
+    user-select: none;
+    font-weight: 700;
+    color: var(--mui-palette-text-primary);
+
+    span {
+      opacity: 0.7;
+      font-size: 0.85em;
+    }
+
+    // Hover effect on logo
+    &:hover {
+      opacity: 0.9;
+    }
+  }
+
+  // Nested controls wrapper
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
 }

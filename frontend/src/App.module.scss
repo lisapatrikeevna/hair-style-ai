@@ -1,33 +1,38 @@
+// App.module.scss
+
 .appShell {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background-color: var(--mui-palette-background-default, #121212);
-}
-
-.mainWrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-}
-
-.loaderOverlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: rgba(0, 0, 0, 0.6);
-  z-index: 1300;
-}
-
-.contentWrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.snackbarAlert {
   width: 100%;
+  // Use dynamic MUI CSS variable for global background
+  background-color: var(--mui-palette-background-default);
+  color: var(--mui-palette-text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+
+  .mainWrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    position: relative;
+
+    .contentWrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      padding: 24px 0;
+    }
+  }
+
+  .loaderOverlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1300;
+  }
 }
