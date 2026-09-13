@@ -1,15 +1,28 @@
-// Header.module.scss
-
 .header {
-  // Styles for the main AppBar container
   background-color: var(--mui-palette-background-paper) !important;
   color: var(--mui-palette-text-primary) !important;
   border-bottom: 1px solid var(--mui-palette-divider);
   transition: background-color 0.3s ease, color 0.3s ease;
 
-  // Nested elements inside Header
-  .logo {
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .logoBox {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     cursor: pointer;
+  }
+
+  .logoImg {
+    width: 36px;
+    height: 36px;
+    object-fit: contain;
+  }
+
+  .logoText {
     user-select: none;
     font-weight: 700;
     color: var(--mui-palette-text-primary);
@@ -19,16 +32,31 @@
       font-size: 0.85em;
     }
 
-    // Hover effect on logo
     &:hover {
       opacity: 0.9;
     }
   }
 
-  // Nested controls wrapper
   .controls {
     display: flex;
     align-items: center;
     gap: 8px;
   }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
+    background-color: var(--mui-palette-primary-main);
+    font-size: 14px;
+  }
+}
+
+.menuPaper {
+  min-width: 200px;
+  border-radius: 8px !important;
+  margin-top: 8px !important;
+}
+
+.userInfoBox {
+  padding: 12px 16px;
 }

@@ -1,0 +1,61 @@
+// auth.module.scss
+
+.authModal {
+  .modalTitle {
+    margin: 0;
+    padding: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--mui-palette-background-paper);
+  }
+
+  .closeButton {
+    color: var(--mui-palette-text-secondary);
+  }
+
+  .modalContent {
+    padding: 0;
+    background-color: var(--mui-palette-background-default);
+  }
+
+  .formContainer {
+    padding: 24px;
+  }
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+
+  .alert {
+    margin-bottom: 16px;
+  }
+
+  .submitButton {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    padding: 10px;
+    background-color: var(--mui-palette-primary-main);
+    color: var(--mui-palette-primary-contrastText);
+
+    &:hover {
+      background-color: var(--mui-palette-primary-dark);
+    }
+  }
+
+  .switchBox {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+
+    .switchButton {
+      text-transform: none;
+      font-weight: 600;
+      padding: 0;
+      min-width: auto;
+      margin-left: 4px;
+    }
+  }
+}
