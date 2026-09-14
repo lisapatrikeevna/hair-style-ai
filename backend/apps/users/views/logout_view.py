@@ -1,37 +1,40 @@
-from django.conf import settings
-from django.contrib.auth import get_user_model
+import logging
 from rest_framework import generics, status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
+from django.contrib.auth import get_user_model
 
 from apps.users.serializers.logout_serilizer import LogoutSerializer
+from apps.users.serializers.login_serializer import UserResponseSerializer
+from apps.users.views.login_view import set_auth_cookies
+
+User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class LogoutView(generics.GenericAPIView):
-    permission_classes = [AllowAny]
     serializer_class = LogoutSerializer
+    permission_classes = [IsAuthenticated]
 
     @extend_schema(
         summary="User Logout",
-        description="Blacklists the refresh token and clears access_token and refresh_token httpOnly cookies.",
-        responses={200: {"description": "Logout successful, cookies cleared"}}
+        description="Blacklists current refresh token and initializes a new guest session.",
+        responses={200: UserResponseSerializer}
     )
     def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data, context={'request': request})
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        # 1. Blacklist current token if passed in body/cookies
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                serializer.save()
+            except Exception as e:
+                logger.warning(f"Failed to blacklist token: {e}")
 
-        response = Response(
-            {"detail": "Logout successful, cookies cleared"},
-            status=status.HTTP_200_OK
-        )
+        # 2. Immediately create a new guest session
+        guest_user = User.objects.create_user(is_guest=True)
+        access_token, refresh_token = guest_user.get_tokens()
 
-        is_production = not settings.DEBUG
-        samesite_value = 'None' if is_production else 'Lax'
-
-        # Сбрасываем httpOnly куки
-        response.delete_cookie('access_token', path='/', samesite=samesite_value)
-        response.delete_cookie('refresh_token', path='/', samesite=samesite_value)
-
-        return response
+        # 3. Overwrite cookies with new guest tokens
+        response = Response(UserResponseSerializer(guest_user).data, status=status.HTTP_200_OK)
+        return set_auth_cookies(response, access_token, refresh_token)
