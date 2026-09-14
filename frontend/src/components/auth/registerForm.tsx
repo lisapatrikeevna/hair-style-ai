@@ -9,18 +9,22 @@ import {
   Typography,
   InputAdornment,
   IconButton,
-  Alert,
 } from '@mui/material';
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import { useSignUpMutation } from '@/bll/auth/auth.serviese';
 import cl from './auth.module.scss';
+import {handleError} from "@/helpers/handleError.ts";
+import {useDispatch} from "react-redux";
 
 const registerSchema = z
   .object({
     email: z.string().email('Invalid email address').min(1, 'Enter email'),
     identifier: z.string().min(1, 'Enter nickname'),
-    password: z.string().min(3, 'Password must be at least 3 characters'),
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .refine((val) => !/^\d+$/.test(val), 'Password cannot be entirely numeric'),
     passwordConfirmation: z.string().min(1, 'Confirm your password'),
   })
   .superRefine((data, ctx) => {
@@ -41,65 +45,38 @@ interface RegisterFormProps {
 }
 
 export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) => {
+  const dispatch = useDispatch();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [signUp, { isLoading }] = useSignUpMutation();
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<RegisterFormData>({
+  const {register, handleSubmit, formState: { errors },} = useForm<RegisterFormData>({
     mode: 'onSubmit',
     resolver: zodResolver(registerSchema),
     defaultValues: { email: '', identifier: '', password: '', passwordConfirmation: '' },
   });
 
   const onSubmit = (data: RegisterFormData) => {
-    setErrorMessage(null);
-    signUp({ email: data.email, password: data.password, username: data.identifier })
-      .unwrap()
-      .then(() => onSuccess())
+    signUp({ email: data.email, password: data.password, username: data.identifier ,password_confirm: data.passwordConfirmation })
+      .unwrap().then(() => onSuccess())
       .catch((err) => {
-        console.error('Registration error:', err);
-        setErrorMessage(err?.data?.detail || err?.data?.message || 'Registration failed');
+        // console.log('Registration error:', err);
+        handleError(err?.data?.detail || err ,'Registration failed',dispatch);
       });
   };
 
   return (
     <Box component="form" onSubmit={handleSubmit(onSubmit)} noValidate className={cl.form}>
-      {errorMessage && <Alert severity="error" className={cl.alert}>{errorMessage}</Alert>}
 
-      <TextField
-        margin="normal"
-        fullWidth
-        label="Email"
-        type="email"
-        autoFocus
-        {...register('email')}
-        error={!!errors.email}
-        helperText={errors.email?.message}
-      />
+      <TextField margin="normal" fullWidth label="Email" type="email" autoFocus {...register('email')}
+        error={!!errors.email} helperText={errors.email?.message}/>
 
-      <TextField
-        margin="normal"
-        fullWidth
-        label="Nickname"
-        {...register('identifier')}
-        error={!!errors.identifier}
-        helperText={errors.identifier?.message}
-      />
+      <TextField margin="normal" fullWidth label="Nickname"{...register('identifier')}
+        error={!!errors.identifier} helperText={errors.identifier?.message}/>
 
-      <TextField
-        margin="normal"
-        fullWidth
-        label="Password"
-        type={showPassword ? 'text' : 'password'}
-        {...register('password')}
-        error={!!errors.password}
-        helperText={errors.password?.message}
+      <TextField margin="normal" fullWidth label="Password" type={showPassword ? 'text' : 'password'}
+        {...register('password')} error={!!errors.password} helperText={errors.password?.message}
         slotProps={{
           input: {
             endAdornment: (
@@ -113,14 +90,8 @@ export const RegisterForm = ({ onSuccess, onSwitchToLogin }: RegisterFormProps) 
         }}
       />
 
-      <TextField
-        margin="normal"
-        fullWidth
-        label="Confirm Password"
-        type={showConfirmPassword ? 'text' : 'password'}
-        {...register('passwordConfirmation')}
-        error={!!errors.passwordConfirmation}
-        helperText={errors.passwordConfirmation?.message}
+      <TextField margin="normal" fullWidth label="Confirm Password" type={showConfirmPassword ? 'text' : 'password'}
+        {...register('passwordConfirmation')} error={!!errors.passwordConfirmation} helperText={errors.passwordConfirmation?.message}
         slotProps={{
           input: {
             endAdornment: (

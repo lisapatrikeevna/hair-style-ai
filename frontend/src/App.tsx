@@ -1,76 +1,58 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
-import { Box, Snackbar, Alert } from '@mui/material';
+import { Box, Snackbar, Alert, CircularProgress } from '@mui/material';
 import Header from './components/header/Header';
 import Footer from './components/footer/Footer';
 
 import cl from './App.module.scss';
-import { useGuestLoginMutation, useMeQuery } from "@/bll/auth/auth.serviese.ts";
+import { useGuestLoginMutation, useMeQuery } from '@/bll/auth/auth.serviese.ts';
+import { appActions } from '@/bll/app.slice.ts';
+import {useAppDispatch, useAppSelector} from "@/bll/store.ts";
+import {handleError} from "@/helpers/handleError.ts";
 
 const App = () => {
-  const [notification, setNotification] = useState<{
-    message: string | null;
-    type: 'error' | 'success' | 'info';
-  }>({ message: null, type: 'info' });
+  const dispatch = useAppDispatch();
+  const { isInitialized, error, successMessage } = useAppSelector((state) => state.app);
 
-  // 1. Query executes automatically on mount and manages caching
-  const { error: errorMe, isLoading: isLoadingMe } = useMeQuery();
+  console.log('error', error);
+  console.log('successMessage', successMessage);
 
-  // 2. Mutation for initializing guest session
+  const { error: errorMe, isLoading: isLoadingMe, isSuccess, isError } = useMeQuery();
   const [guestLogin, { isLoading: isLoadingGuest }] = useGuestLoginMutation();
 
   const handleCloseSnackbar = () => {
-    setNotification((prev) => ({ ...prev, message: null }));
+    dispatch(appActions.setError(null));
+    dispatch(appActions.setSuccessMessage(null));
   };
 
-  // 3. React to 401 Unauthorized automatically
   useEffect(() => {
-    if (errorMe && 'status' in errorMe && errorMe.status === 401) {
+    if (isSuccess) dispatch(appActions.setIsInitialized(true));
+
+    if (isError && errorMe && 'status' in errorMe && errorMe.status === 401) {
       guestLogin()
         .unwrap()
-        .then((res) => {
-          console.log('Guest session created:', res);
-        })
-        .catch((err) => {
-          console.error('Failed to create guest session:', err);
-          setNotification({
-            message: 'Failed to initialize guest session',
-            type: 'error',
-          });
-        });
+        .then(() => dispatch(appActions.setIsInitialized(true)))
+        .catch((err) => handleError(err, 'Failed to initialize guest session', dispatch));
     }
-  }, [errorMe, guestLogin]);
+  }, [errorMe, isSuccess, isError, guestLogin, dispatch]);
 
-  const globalLoading = isLoadingMe || isLoadingGuest;
+  const globalLoading = !isInitialized || isLoadingMe || isLoadingGuest;
 
   return (
     <Box className={cl.appShell}>
       <Header />
 
       <Box component="main" className={cl.mainWrap}>
-        {globalLoading && (
-          <Box className={cl.loaderOverlay}>
-            {/* Overlay Loader */}
-          </Box>
+        {globalLoading ? (
+          <Box className={cl.loaderOverlay}><CircularProgress /></Box>
+        ) : (
+          <Box className={cl.contentWrap}><Outlet /></Box>
         )}
 
-        <Box className={cl.contentWrap}>
-          <Outlet />
-        </Box>
-
-        <Snackbar
-          open={!!notification.message}
-          autoHideDuration={6000}
-          onClose={handleCloseSnackbar}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        >
-          <Alert
-            onClose={handleCloseSnackbar}
-            severity={notification.type}
-            variant="filled"
-            className={cl.snackbarAlert}
-          >
-            {notification.message}
+        <Snackbar open={!!error || !!successMessage} autoHideDuration={6000} onClose={handleCloseSnackbar}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+          <Alert onClose={handleCloseSnackbar} severity={error ? 'error' : 'success'} variant="filled" className={cl.snackbarAlert}>
+            {error || successMessage}
           </Alert>
         </Snackbar>
       </Box>

@@ -27,7 +27,6 @@ class RegistrationView(generics.CreateAPIView):
         user = serializer.save()
         logger.info("New user registered successfully: id=%s, email=%s", user.id, user.email)
 
-        # Вызываем Fat Model метод
         access_token, refresh_token = user.get_tokens()
 
         response = Response(

@@ -1,12 +1,13 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
+import {API_URL} from "@/config.ts";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const BASE_URL = `${API_URL}/api/v1/`;
 
 export const baseApi = createApi({
   reducerPath: 'baseApi',
   tagTypes: ['HairstyleTask', 'User','Me'],
   baseQuery: fetchBaseQuery({
-    baseUrl: API_URL,
+    baseUrl: BASE_URL,
     credentials: 'include',
   }),
   endpoints: () => ({}),

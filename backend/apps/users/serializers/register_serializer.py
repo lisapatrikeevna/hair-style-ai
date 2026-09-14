@@ -33,6 +33,5 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password_confirm')
 
-        # Передаем обычный пароль — CustomUserManager внутри вызовет set_password()
         user = User.objects.create_user(**validated_data)
         return user

@@ -20,4 +20,5 @@ export type SignUpPayload = {
   email: string;
   password: string;
   username: string;
+  password_confirm:string
 };

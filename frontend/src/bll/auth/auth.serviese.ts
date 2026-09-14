@@ -6,7 +6,7 @@ const authService = baseApi.injectEndpoints({
     // Fetches currently authenticated user or active guest profile
     me: builder.query<UserType, void>({
       query: () => ({
-        url: '/users/me/',
+        url: '/auth/me/',
         method: 'GET',
       }),
       extraOptions: { maxRetries: 0 },
@@ -16,7 +16,7 @@ const authService = baseApi.injectEndpoints({
     // Authenticates user and sets httpOnly cookies from Django backend
     login: builder.mutation<responseRegisterType, LoginArgs>({
       query: (args) => ({
-        url: '/users/login/',
+        url: '/auth/login/',
         method: 'POST',
         body: args, // RTK Query automatically serializes objects to JSON
       }),
@@ -26,7 +26,7 @@ const authService = baseApi.injectEndpoints({
     // Creates temporary guest session with httpOnly cookie
     guestLogin: builder.mutation<responseRegisterType, void>({
       query: () => ({
-        url: '/users/guest/',
+        url: '/auth/guest/',
         method: 'POST',
       }),
       invalidatesTags: ['Me'],
@@ -35,7 +35,7 @@ const authService = baseApi.injectEndpoints({
     // Registers a new regular user
     signUp: builder.mutation<responseRegisterType, SignUpPayload>({
       query: (args) => ({
-        url: '/users/register/',
+        url: '/auth/register/',
         method: 'POST',
         body: args,
       }),
@@ -45,7 +45,7 @@ const authService = baseApi.injectEndpoints({
     // Logs out user, blacklists token and clears backend cookies
     logOut: builder.mutation<void, void>({
       query: () => ({
-        url: '/users/logout/',
+        url: '/auth/logout/',
         method: 'POST',
       }),
       invalidatesTags: ['Me'],
