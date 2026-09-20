@@ -3,7 +3,7 @@ backend/.idea/
 *.iws
 *.iml
 *.ipr
-
+*.idea
 
 # Python / Django
 .venv/
@@ -13,6 +13,7 @@ __pycache__/
 db.sqlite3
 media/
 backend/.env
+*weights
 
 # Node.js / React
 node_modules/
