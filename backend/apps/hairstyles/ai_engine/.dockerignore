@@ -1,0 +1,12 @@
+# Исключаем тяжелые веса, которые не нужны для черепа
+weights/hairfastgan/
+weights/stable-diffusion-inpainting/
+weights/.cache/
+
+# ВСЁ ОСТАЛЬНОЕ (включая wheels) ДОЛЖНО БЫТЬ ДОСТУПНО ДЛЯ ДОКЕРА!
+media/
+.venv/
+__pycache__/
+*.pyc
+.git/
+.DS_Store
