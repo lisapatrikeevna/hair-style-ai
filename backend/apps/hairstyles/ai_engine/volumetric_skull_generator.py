@@ -321,8 +321,6 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 import pickle
-from render_utils.render_ctypes import TrianglesMeshRender
-from render_utils.TDDFA_ONNX import TDDFA_ONNX
 
 
 class VolumetricSkullGenerator:
@@ -336,10 +334,6 @@ class VolumetricSkullGenerator:
 
         with open(self.config_path, 'r') as f:
             self.cfg = yaml.safe_load(f)
-
-        opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 4
-        self.ort_session = ort.InferenceSession(self.onnx_path, opts)
 
     def _ensure_docker_running(self):
         try:
@@ -437,156 +431,219 @@ class VolumetricSkullGenerator:
             sys.exit(1)
 
         h, w, _ = image.shape
-        inp_tensor, roi_box = None, None
+        roi_box = None
 
         debug_dir = os.path.join(os.path.dirname(output_path), "debug")
         os.makedirs(debug_dir, exist_ok=True)
 
-        # ШАГ 1: Пытаемся использовать официальный детектор лиц и препроцессинг из репозитория
-        try:
-            try:
-                from render_utils.FaceBoxes_ONNX import FaceBoxes_ONNX
-            except ImportError:
-                from FaceBoxes.FaceBoxes_ONNX import FaceBoxes_ONNX
+        from render_utils.FaceBoxes_ONNX import FaceBoxes_ONNX
+        from render_utils.TDDFA_ONNX import TDDFA_ONNX
 
-            face_boxes = FaceBoxes_ONNX()
-            tddfa = TDDFA_ONNX(**self.cfg)
+        face_boxes = FaceBoxes_ONNX()
+        tddfa = TDDFA_ONNX(**self.cfg)
 
-            boxes = face_boxes(image)
-            if boxes is not None and len(boxes) > 0:
-                print(f"[Info] Official FaceBoxes detected {len(boxes)} face(s).")
-                param_lst, roi_box_lst = tddfa(image, boxes)
-                if roi_box_lst is not None and len(roi_box_lst) > 0:
-                    roi_box = roi_box_lst[0].astype(int).tolist()
-                    x1, y1, x2, y2 = roi_box[0], roi_box[1], roi_box[2], roi_box[3]
+        # 1. Детекция лиц через официальный FaceBoxes
+        boxes = face_boxes(image)
+        if boxes is None or len(boxes) == 0:
+            print('[Error] No face detected, exit')
+            return False
 
-                    debug_box_img = image.copy()
-                    cv2.rectangle(debug_box_img, (x1, y1), (x2, y2), (255, 0, 0), 3)
-                    cv2.imwrite(os.path.join(debug_dir, "debug_2_roi_box_OFFICIAL.png"), debug_box_img)
+        print(f"[Info] Official FaceBoxes detected {len(boxes)} face(s).")
+        boxes = np.array(boxes, dtype=np.float32)
 
-                    crop = image[y1:y2, x1:x2]
-                    if crop.size > 0:
-                        ch, cw, _ = crop.shape
-                        scale = 120.0 / max(ch, cw)
-                        resized_w = int(cw * scale)
-                        resized_h = int(ch * scale)
-                        resized_crop = cv2.resize(crop, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
+        # 2. Получение параметров регрессии через официальный TDDFA
+        param_lst, roi_box_lst = tddfa(image, boxes)
 
-                        crop_resized = np.zeros((120, 120, 3), dtype=np.uint8)
-                        start_x = (120 - resized_w) // 2
-                        start_y = (120 - resized_h) // 2
-                        crop_resized[start_y:start_y + resized_h, start_x:start_x + resized_w] = resized_crop
+        if not param_lst or len(param_lst) == 0 or not roi_box_lst or len(roi_box_lst) == 0:
+            raise RuntimeError("[Error] TDDFA failed to generate dense parameters for the face.")
 
-                        cv2.imwrite(os.path.join(debug_dir, "debug_3_model_input_OFFICIAL.png"), crop_resized)
+        # Берем первый найденный бокс лица
+        roi_box = np.array(roi_box_lst[0], dtype=np.float32).astype(int).tolist()
+        x1, y1, x2, y2 = roi_box[0], roi_box[1], roi_box[2], roi_box[3]
 
-                        inp_tensor = crop_resized.astype(np.float32)
-                        inp_tensor = (inp_tensor - 127.5) / 128.0
-                        inp_tensor = inp_tensor.transpose(2, 0, 1)
-                        inp_tensor = np.expand_dims(inp_tensor, axis=0)
-        except Exception as e:
-            print(f"[Warning] Official FaceBoxes/TDDFA method skipped or failed: {e}")
+        # Сохраняем дебаг-картинку с найденным ROI (ваша логика отладки)
+        debug_box_img = image.copy()
+        cv2.rectangle(debug_box_img, (x1, y1), (x2, y2), (255, 0, 0), 3)
+        cv2.imwrite(os.path.join(debug_dir, "debug_2_roi_box_OFFICIAL.png"), debug_box_img)
 
-        # ШАГ 2: Если официальный метод не сработал, пробуем твой метод по маске волос
-        if inp_tensor is None and hair_mask_path and os.path.exists(hair_mask_path):
-            print(f"[Info] Fallback to hair mask: {hair_mask_path}")
-            hair_mask = cv2.imread(hair_mask_path, cv2.IMREAD_GRAYSCALE)
-            if hair_mask is not None:
-                inp_tensor, roi_box = self._preprocess_from_hair_mask(image, hair_mask, debug_dir)
+        # # 3. Реконструкция плотных вертексов через официальный метод TDDFA
+        # dense_vertices_list = tddfa.recon_vers(param_lst, roi_box_lst, dense_flag=True)
+        #
+        # # 4. Рендеринг 3D-модели лица через нативный C-рендерер
+        # skull_map = np.zeros((h, w), dtype=np.uint8)
+        # box_w = x2 - x1
+        # box_h = y2 - y1
+        #
+        # so_path = os.path.join(os.path.dirname(__file__), "render_utils", "asset", "render.so")
+        # if not os.path.exists(so_path):
+        #     so_path = os.path.join(os.path.dirname(__file__), "render_utils", "render.so")
+        #
+        # pkl_path = bfm_path or os.path.join(os.path.dirname(__file__), "render_utils", "bfm_noneck_v3.pkl")
+        #
+        # if os.path.exists(so_path) and os.path.exists(pkl_path):
+        #     try:
+        #         with open(pkl_path, "rb") as f:
+        #             bfm_data = pickle.load(f)
+        #         triangles = bfm_data.get("tri")
+        #
+        #         overlay_canvas = np.zeros((h, w, 3), dtype=np.uint8)
+        #         from render_utils.render_ctypes import render_app
+        #
+        #         for ver_ in dense_vertices_list:
+        #             ver = np.ascontiguousarray(ver_.T)
+        #             render_app(ver, triangles, bg=overlay_canvas)
+        #
+        #         gray_face = cv2.cvtColor(overlay_canvas, cv2.COLOR_BGR2GRAY)
+        #         _, skull_map = cv2.threshold(gray_face, 10, 255, cv2.THRESH_BINARY)
+        #         print("[Success] Native C-renderer face mask generated successfully.")
+        #     except Exception as e:
+        #         import traceback
+        #         traceback.print_exc()
+        #
+        # # Фолбэк, если рендерер не сработал
+        # if np.count_nonzero(skull_map) < 100:
+        #     print("[Warning] Fallback to ROI box mask...")
+        #     cv2.rectangle(skull_map, (x1, y1), (x2, y2), 255, -1)
+        #
+        # # 5. Достройка верхнего купола черепа под прическу (ваша логика)
+        # y_indices, x_indices = np.where(skull_map > 0)
+        # if len(y_indices) > 0:
+        #     face_top_y = y_indices.min()
+        #     cv2.circle(skull_map, ((x1 + x2) // 2, max(y1, face_top_y - int(box_h * 0.15))), int(box_w * 0.4), 255, -1)
+        #
+        # # Финальное сглаживание и морфология купола
+        # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))
+        # skull_map = cv2.morphologyEx(skull_map, cv2.MORPH_CLOSE, kernel)
+        # skull_map = cv2.GaussianBlur(skull_map, (41, 41), 0)
+        # _, skull_map = cv2.threshold(skull_map, 127, 255, cv2.THRESH_BINARY)
+        #
+        # os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # cv2.imwrite(output_path, skull_map)
+        # print(f"[Success] Skull base mask generated: {output_path}")
+        # return True
+        # =====================================================================
+        # 3. Реконструкция плотных вертексов лица
+        # =====================================================================
+        # Явно передаем dense_flag=True для получения полной маски лица (~40 000 точек)
+        dense_vertices_list = tddfa.recon_vers(param_lst, roi_box_lst, dense_flag=True)
 
-        # ШАГ 3: Фолбэк на центральный кроп, если ничего другое не сработало
-        if inp_tensor is None:
-            print("[Info] Fallback to central crop estimation...")
-            size = min(h, w) // 2
-            x1, y1 = (w - size) // 2, (h - size) // 3
-            x2, y2 = x1 + size, y1 + size
-            roi_box = [x1, y1, x2, y2]
-
-            debug_box_img = image.copy()
-            cv2.rectangle(debug_box_img, (x1, y1), (x2, y2), (0, 0, 255), 3)
-            cv2.imwrite(os.path.join(debug_dir, "debug_2_roi_box_FALLBACK.png"), debug_box_img)
-
-            crop = image[y1:y2, x1:x2]
-            ch, cw, _ = crop.shape
-            scale = 120.0 / max(ch, cw)
-            resized_w = int(cw * scale)
-            resized_h = int(ch * scale)
-            resized_crop = cv2.resize(crop, (resized_w, resized_h), interpolation=cv2.INTER_LINEAR)
-
-            crop_resized = np.zeros((120, 120, 3), dtype=np.uint8)
-            start_x = (120 - resized_w) // 2
-            start_y = (120 - resized_h) // 2
-            crop_resized[start_y:start_y + resized_h, start_x:start_x + resized_w] = resized_crop
-
-            cv2.imwrite(os.path.join(debug_dir, "debug_3_model_input_FALLBACK.png"), crop_resized)
-
-            inp_tensor = crop_resized.astype(np.float32)
-            inp_tensor = (inp_tensor - 127.5) / 128.0
-            inp_tensor = inp_tensor.transpose(2, 0, 1)
-            inp_tensor = np.expand_dims(inp_tensor, axis=0)
-
-        # ШАГ 4: Инференс модели и получение плотной карты позиций
-        input_name = self.ort_session.get_inputs()[0].name
-        outputs = self.ort_session.run(None, {input_name: inp_tensor})
-
-        pred_map = outputs[0]
-        if len(pred_map.shape) == 4:
-            pred_map = np.squeeze(pred_map, axis=0)
-
-        print(f"[Info] ONNX inference successful, dense map shape: {pred_map.shape}")
-
-        # ШАГ 5: Рендеринг точной 3D-модели лица через нативный C-рендерер и достройка купола
+        # =====================================================================
+        # 4. Рендеринг анатомической объемной маски лица через карту глубины
+        # =====================================================================
         skull_map = np.zeros((h, w), dtype=np.uint8)
-        x1, y1, x2, y2 = roi_box
-        box_w = x2 - x1
-        box_h = y2 - y1
 
-        so_path = os.path.join(os.path.dirname(__file__), "render_utils", "render.so")
-        pkl_path = bfm_path or os.path.join(os.path.dirname(__file__), "render_utils", "bfm_noneck_v3.pkl")
-
-        if os.path.exists(so_path) and os.path.exists(pkl_path):
+        if dense_vertices_list:
             try:
-                with open(pkl_path, "rb") as f:
-                    bfm_data = pickle.load(f)
-                triangles = bfm_data.get("tri")
+                # Извлекаем первую матрицу 3D вертексов (3, N)
+                ver = dense_vertices_list[0]
 
-                vertices = pred_map[:3, :, :].reshape(3, -1).T
-                vertices[:, 0] = vertices[:, 0] * (box_w / 120.0) + x1
-                vertices[:, 1] = vertices[:, 1] * (box_h / 120.0) + y1
+                # Координаты X и Y проецируем на плоскость картинки
+                pts2d = ver[:2, :].T.astype(np.int32)
 
-                mesh_renderer = TrianglesMeshRender(clibs=so_path)
-                overlay_canvas = np.zeros((h, w, 3), dtype=np.uint8)
-                ver_ct = np.ascontiguousarray(vertices.T)
-                mesh_renderer(ver_ct, triangles, bg=overlay_canvas)
+                # Координата Z отвечает за глубину (объем)
+                z = ver[2, :]
 
-                gray_face = cv2.cvtColor(overlay_canvas, cv2.COLOR_BGR2GRAY)
-                _, skull_map = cv2.threshold(gray_face, 10, 255, cv2.THRESH_BINARY)
-                print("[Success] Native C-renderer face mask generated successfully.")
+                # Нормализуем Z в диапазон от 150 до 255 (чтобы лицо было объемным, но ярким)
+                z_min, z_max = np.min(z), np.max(z)
+                if z_max - z_min > 0:
+                    z_norm = 150 + ((z - z_min) / (z_max - z_min) * 105)
+                else:
+                    z_norm = np.ones_like(z) * 255
+                z_norm = z_norm.astype(np.uint8)
+
+                # Создаем временный холст для карты глубины
+                depth_canvas = np.zeros((h, w), dtype=np.uint8)
+
+                # Ограничиваем координаты, чтобы не выйти за границы картинки
+                valid_idx = (pts2d[:, 0] >= 0) & (pts2d[:, 0] < w) & (pts2d[:, 1] >= 0) & (pts2d[:, 1] < h)
+                x_v = pts2d[valid_idx, 0]
+                y_v = pts2d[valid_idx, 1]
+                z_v = z_norm[valid_idx]
+
+                # Быстро записываем точки объема на холст без циклов Python
+                depth_canvas[y_v, x_v] = z_v
+
+                # Строим плотную выпуклую оболочку лица, чтобы залить пустоты между точками
+                hull = cv2.convexHull(pts2d)
+                mask_hull = np.zeros((h, w), dtype=np.uint8)
+                cv2.fillPoly(mask_hull, [hull], 255)
+
+                # Размываем точки для получения гладкого рельефа кожи (носа, скул)
+                blurred_depth = cv2.GaussianBlur(depth_canvas, (15, 15), 0)
+
+                # Применяем маску лица, чтобы объем не размывался на черный фон
+                skull_map = cv2.bitwise_and(blurred_depth, blurred_depth, mask=mask_hull)
+
+                # Переводим логическую маску в uint8 формат
+                empty_pixels_mask = (skull_map == 0).astype(np.uint8) * 255
+
+                # Выравниваем базовую яркость подложки лица (подбородок и щеки)
+                fallback_background = cv2.bitwise_and(mask_hull, mask_hull, mask=empty_pixels_mask)
+
+                # ИСПРАВЛЕНИЕ ОШИБКИ NUMPY: используем np.where для безопасного объединения рельефа и подложки
+                bg_intensity = (fallback_background.astype(np.float32) * 150 / 255).astype(np.uint8)
+                skull_map = np.where(skull_map == 0, bg_intensity, skull_map).astype(np.uint8)
+
+                # Финальное ограничение по маске лица
+                skull_map = cv2.bitwise_and(skull_map, mask_hull)
+
+                # ИСПРАВЛЕНИЕ NUMPY: используем np.where для безопасного объединения рельефа и подложки
+                bg_intensity = (fallback_background.astype(np.float32) * 150 / 255).astype(np.uint8)
+                skull_map = np.where(skull_map == 0, bg_intensity, skull_map).astype(np.uint8)
+
+                # ─── ДОБАВЛЯЕМ ЭТОТ БЛОК ДЛЯ ПРОЯВЛЕНИЯ ТЕНЕЙ ───────────────────
+                # Растягиваем диапазон яркости только внутри маски лица, чтобы проявить рельеф
+                active_pixels = skull_map[mask_hull > 0]
+                if len(active_pixels) > 0:
+                    s_min, s_max = np.min(active_pixels), np.max(active_pixels)
+                    if s_max - s_min > 0:
+                        # Картографируем глубину от 80 (темно-серый для впадин) до 255 (белый для носа)
+                        skull_map = np.where(
+                            mask_hull > 0,
+                            (80 + ((skull_map.astype(np.float32) - s_min) / (s_max - s_min) * 175)).astype(np.uint8),
+                            0
+                        )
+                # ────────────────────────────────────────────────────────────────
+
+                # Финальное ограничение по маске лица
+                skull_map = cv2.bitwise_and(skull_map, mask_hull)
+
+                print("[Success] Volumetric 3D depth face surface generated successfully via Vectorization!")
+
+
             except Exception as e:
-                import traceback
-                print(f"[Warning] Native C-render failed, details:")
-                traceback.print_exc()
+                print(f"[Error in Depth rendering]: {e}")
+                # Надежный плоский фолбэк по контуру, если математика подвела
+                pts2d = dense_vertices_list[0][:2, :].T.astype(np.int32)
+                hull = cv2.convexHull(pts2d)
+                cv2.fillPoly(skull_map, [hull], 255)
 
-        # Фолбэк на случай сбоя рендерера
-        if np.count_nonzero(skull_map) < 100:
-            print("[Warning] Fallback anatomical shape applied...")
-            cx, cy = (x1 + x2) // 2, y1 + box_h // 2
-            cv2.ellipse(skull_map, (cx, cy), (box_w // 2, box_h // 2), 0, 0, 360, 255, -1)
-
-        # Достраиваем верхний купол черепа под прическу
+        # =====================================================================
+        # 5. Достройка объемного купола черепа строго под анатомию
+        # =====================================================================
         y_indices, x_indices = np.where(skull_map > 0)
-        if len(y_indices) > 0:
+        if len(y_indices) > 0 and len(x_indices) > 0:
             face_top_y = y_indices.min()
-            cv2.circle(skull_map, ((x1 + x2) // 2, max(y1, face_top_y - int(box_h * 0.15))), int(box_w * 0.4), 255, -1)
+            face_left_x = x_indices.min()
+            face_right_x = x_indices.max()
 
-        # Финальное сглаживание купола
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))
-        skull_map = cv2.morphologyEx(skull_map, cv2.MORPH_CLOSE, kernel)
-        skull_map = cv2.GaussianBlur(skull_map, (41, 41), 0)
-        _, skull_map = cv2.threshold(skull_map, 127, 255, cv2.THRESH_BINARY)
+            center_x = (face_left_x + face_right_x) // 2
+            face_width = face_right_x - face_left_x
 
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        cv2.imwrite(output_path, skull_map)
-        print(f"[Success] Volumetric skull base generated securely: {output_path}")
+            # Радиус черепа
+            circle_radius = int(face_width * 0.44)
+            circle_center_y = int(face_top_y + (circle_radius * 0.35))
+
+            # Создаем объемную полусферу (градиент от центра к краям)
+            dome_mask = np.zeros((h, w), dtype=np.uint8)
+            for r in range(circle_radius, 0, -1):
+                # Чем ближе к центру сферы, тем ярче (белее), имитируя объемный затылок
+                brightness = int(200 + (55 * (1.0 - r / circle_radius)))
+                cv2.circle(dome_mask, (center_x, circle_center_y), r, brightness, -1)
+
+            # Объединяем объемное лицо и объемный купол черепа (берем максимальную яркость точек)
+            skull_map = cv2.max(skull_map, dome_mask)
+            print("[Success] 3D volumetric skull dome blended perfectly.")
 
 
 if __name__ == "__main__":

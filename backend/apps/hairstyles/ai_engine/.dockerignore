@@ -3,6 +3,11 @@ weights/hairfastgan/
 weights/stable-diffusion-inpainting/
 weights/.cache/
 
+detectors/
+generators/
+hairfastgan/
+migrations/
+
 # ВСЁ ОСТАЛЬНОЕ (включая wheels) ДОЛЖНО БЫТЬ ДОСТУПНО ДЛЯ ДОКЕРА!
 media/
 .venv/
