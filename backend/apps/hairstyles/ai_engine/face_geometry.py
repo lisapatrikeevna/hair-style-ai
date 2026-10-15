@@ -1,6 +1,8 @@
 import os
 import subprocess
 import json
+import time
+
 import numpy as np
 import io
 import base64
@@ -18,10 +20,23 @@ class FaceGeometryBuilder:
             subprocess.run(["docker", "info"], capture_output=True, check=True)
             return
         except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError(
-                "[Error] Docker daemon is not running. "
-                "Please make sure Docker Desktop is running in your system tray."
-            )
+            print("[Info] Docker is not running. Attempting to start Docker Desktop automatically...")
+            if os.path.exists("/Applications/Docker.app"):
+                subprocess.run(["open", "-a", "Docker"])
+                for _ in range(20):
+                    time.sleep(3)
+                    try:
+                        subprocess.run(["docker", "info"], capture_output=True, check=True)
+                        print("[Info] Docker successfully started!")
+                        return
+                    except subprocess.CalledProcessError:
+                        continue
+                raise RuntimeError("[Error] Timed out waiting for Docker to start.")
+            else:
+                raise RuntimeError(
+                    "[Error] Docker Desktop is not found in /Applications. Please ensure Docker is installed."
+                )
+
 
     def _ensure_docker_image(self):
         image_name = "face_feature_extractor"
@@ -164,6 +179,7 @@ class FaceGeometryBuilder:
                     ver_landmarks=ver_landmarks,
                     rotation_matrix=rotation,
                     output_obj_path=output_obj_path,
+                    image_path=image_path,
                     )
                 if result is None:
                     print("[Error] FLAME fitting optimization failed.")
