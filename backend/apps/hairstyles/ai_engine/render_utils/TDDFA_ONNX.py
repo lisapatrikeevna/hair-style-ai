@@ -9,124 +9,72 @@ import numpy as np
 import cv2
 import onnxruntime
 import sys
+
 sys.stdout.reconfigure(line_buffering=True)
 
-# from render_utils.onnx import convert_to_onnx
 from render_utils.io import _load
 from render_utils.functions import (
     crop_img, parse_roi_box_from_bbox, parse_roi_box_from_landmark,
 )
 from render_utils.tddfa_util import _parse_param, similar_transform
-# from bfm.bfm import BFMModel
-# from bfm.bfm_onnx import convert_bfm_to_onnx
-
+from render_utils.bfm.bfm import BFMModel
 make_abs_path = lambda fn: osp.join(osp.dirname(osp.realpath(__file__)), fn)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-
-def get_noneck_path():
-    if os.path.exists("/app/weights/bfm_noneck_v3.pkl"):
-        return "/app/weights/bfm_noneck_v3.pkl"
-
-    if os.path.exists("/app/weights/skull_weights/bfm_noneck_v3.pkl"):
-        return "/app/weights/skull_weights/bfm_noneck_v3.pkl"
-
-    path_local = os.path.abspath(os.path.join(BASE_DIR, "weights/skull_weights/bfm_noneck_v3.pkl"))
-    if not os.path.exists(path_local):
-        path_local = os.path.abspath(os.path.join(BASE_DIR, "../weights/skull_weights/bfm_noneck_v3.pkl"))
-    return path_local
-
-
-def get_param_mean_std_path():
-    if os.path.exists("/app/weights/param_mean_std_62d_120x120.pkl"):
-        return "/app/weights/param_mean_std_62d_120x120.pkl"
-
-    if os.path.exists("/app/weights/skull_weights/param_mean_std_62d_120x120.pkl"):
-        return "/app/weights/skull_weights/param_mean_std_62d_120x120.pkl"
-
-    path_local = os.path.abspath(os.path.join(BASE_DIR, "weights/skull_weights/param_mean_std_62d_120x120.pkl"))
-    if not os.path.exists(path_local):
-        path_local = os.path.abspath(os.path.join(BASE_DIR, "../weights/skull_weights/param_mean_std_62d_120x120.pkl"))
-    return path_local
-
-
-def get_main_onnx_path():
-    if os.path.exists("/app/weights/mb1_120x120.onnx"):
-        return "/app/weights/mb1_120x120.onnx"
-
-    if os.path.exists("/app/weights/skull_weights/mb1_120x120.onnx"):
-        return "/app/weights/skull_weights/mb1_120x120.onnx"
-
-    path_local = os.path.abspath(os.path.join(BASE_DIR, "weights/skull_weights/mb1_120x120.onnx"))
-    if not os.path.exists(path_local):
-        path_local = os.path.abspath(os.path.join(BASE_DIR, "../weights/skull_weights/mb1_120x120.onnx"))
-    return path_local
 
 
 class TDDFA_ONNX(object):
     """TDDFA_ONNX: the ONNX version of Three-D Dense Face Alignment (TDDFA)"""
 
     def __init__(self, **kvs):
-        # 1. Проверяем все возможные пути внутри контейнера (с учетом затирания папок монтированием)
-        possible_bfm_paths = [
-            "/app/weights/bfm_noneck_v3.pkl",
-            "/app/weights/skull_weights/bfm_noneck_v3.pkl",
-            "/app/apps/hairstyles/ai_engine/weights/skull_weights/bfm_noneck_v3.pkl",
-            osp.join(osp.dirname(__file__), "bfm_noneck_v3.pkl")
-        ]
+        # Helper to resolve path: argument -> container path -> local config default
+        def get_path(key, container_path, local_default):
+            val = kvs.get(key)
+            return val if (val is not None and osp.exists(str(val))) else (
+                container_path if osp.exists(container_path) else local_default)
 
-        possible_param_paths = [
-            "/app/weights/param_mean_std_62d_120x120.pkl",
-            "/app/weights/skull_weights/param_mean_std_62d_120x120.pkl",
-            "/app/apps/hairstyles/ai_engine/weights/skull_weights/param_mean_std_62d_120x120.pkl",
-            osp.join(osp.dirname(__file__), "param_mean_std_62d_120x120.pkl")
-        ]
-
-        possible_onnx_paths = [
-            "/app/weights/mb1_120x120.onnx",
-            "/app/weights/skull_weights/mb1_120x120.onnx",
-            "/app/apps/hairstyles/ai_engine/weights/skull_weights/mb1_120x120.onnx",
-            osp.join(osp.dirname(__file__), "mb1_120x120.onnx")
-        ]
-
-        # Выбираем первый существующий файл из списков
-        bfm_fp = next((p for p in possible_bfm_paths if os.path.exists(p)), possible_bfm_paths[0])
-        param_mean_std_fp = next((p for p in possible_param_paths if os.path.exists(p)), possible_param_paths[0])
-        onnx_fp = next((p for p in possible_onnx_paths if os.path.exists(p)), possible_onnx_paths[0])
-
-        print(f"[DEBUG INITIALIZATION] Selected bfm_fp: {bfm_fp} (Exists: {os.path.exists(bfm_fp)})")
-        print(
-            f"[DEBUG INITIALIZATION] Selected param_fp: {param_mean_std_fp} (Exists: {os.path.exists(param_mean_std_fp)})")
-        print(f"[DEBUG INITIALIZATION] Selected onnx_fp: {onnx_fp} (Exists: {os.path.exists(onnx_fp)})")
-
-        # 2. Загружаем базовую 3D-модель лица
-        if os.path.exists(bfm_fp):
-            bfm_data = _load(bfm_fp)
-            self.u_base = bfm_data.get('u')
-            self.w_shp_base = bfm_data.get('w_shp')
-            self.w_exp_base = bfm_data.get('w_exp')
-            self.tri = bfm_data.get('tri')
-        else:
-            raise FileNotFoundError(f"[Error] Сritical file not found at: {bfm_fp}")
-
+        # config
+        self.size = kvs.get('size', 120)
         self.gpu_mode = kvs.get('gpu_mode', False)
         self.gpu_id = kvs.get('gpu_id', 0)
-        self.size = kvs.get('size', 120)
 
-        # 3. Загружаем параметры нормализации
-        if os.path.exists(param_mean_std_fp):
-            r = _load(param_mean_std_fp)
-            self.param_mean = r.get('mean')
-            self.param_std = r.get('std')
-        else:
-            raise FileNotFoundError(f"[Error] Normalization file not found at: {param_mean_std_fp}")
 
-        # 4. Инициализируем основную сессию ONNX
-        if not os.path.exists(onnx_fp):
-            raise FileNotFoundError(f"[Error] ONNX model not found at: {onnx_fp}")
+        bfm_fp = get_path('bfm_fp', "/app/weights/bfm_noneck_v3.pkl", make_abs_path('configs/bfm_noneck_v3.pkl'))
+        param_mean_std_fp = get_path('param_mean_std_fp', "/app/weights/param_mean_std_62d_120x120.pkl",
+                                     make_abs_path('configs/param_mean_std_62d_120x120.pkl'))
+        onnx_fp = get_path('onnx_fp', "/app/weights/mb1_120x120.onnx",
+                           make_abs_path(f'configs/mb1_{self.size}x{self.size}.onnx'))
 
+        # Direct loading of BFM base data and triangles
+        # bfm_data = _load(bfm_fp)
+        # self.u_base = bfm_data.get('u')
+        # self.w_shp_base = bfm_data.get('w_shp')
+        # self.w_exp_base = bfm_data.get('w_exp')
+
+        # tri_npy_path = osp.join(osp.dirname(osp.realpath(__file__)), "configs", "tri.npy")
+        # self.tri = np.load(tri_npy_path) if osp.exists(tri_npy_path) else bfm_data.get('tri')[:, :60532]
+
+        bfm = BFMModel(bfm_fp, shape_dim=kvs.get('shape_dim', 40), exp_dim=kvs.get('exp_dim', 10))
+        self.tri = bfm.tri
+
+        # Sparse keypoints-only bases (38,365 vertices) for backward compatibility
+        self.u_base = bfm.u_base
+        self.w_shp_base = bfm.w_shp_base
+        self.w_exp_base = bfm.w_exp_base
+
+        # Full dense BFM bases (53,489 vertices) for dense mesh reconstruction
+        self.u_dense = bfm.u
+        self.w_shp_dense = bfm.w_shp
+        self.w_exp_dense = bfm.w_exp
+
+        # Initialize ONNX runtime session
         self.session = onnxruntime.InferenceSession(onnx_fp, None)
         self.bfm_session = None
+
+        # Load parameter normalization configs
+        r = _load(param_mean_std_fp)
+        self.param_mean = r.get('mean')
+        self.param_std = r.get('std')
 
     def __call__(self, img_ori, objs, **kvs):
         # Crop image, forward to get the param
@@ -159,44 +107,34 @@ class TDDFA_ONNX(object):
 
         return param_lst, roi_box_lst
 
-    def get_depth_map(ver, h, w):
-        """
-        Превращает 3D вертексы в объемную карту глубины (светотень)
-        """
-        z = ver[2, :]
-
-        z_min, z_max = np.min(z), np.max(z)
-        if z_max - z_min > 0:
-            z_norm = (z - z_min) / (z_max - z_min) * 255
-        else:
-            z_norm = z
-
-        z_norm = z_norm.astype(np.uint8)
-        depth_img = np.zeros((h, w), dtype=np.uint8)
-        pts2d = ver[:2, :].T.astype(np.int32)
-        idx = np.argsort(z)
-
-        for i in idx:
-            x_coord = pts2d[i, 0]
-            y_coord = pts2d[i, 1]
-            if 0 <= x_coord < w and 0 <= y_coord < h:
-                depth_img[y_coord, x_coord] = z_norm[i]
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        depth_img = cv2.morphologyEx(depth_img, cv2.MORPH_CLOSE, kernel)
-        depth_img = cv2.GaussianBlur(depth_img, (7, 7), 0)
-
-        return depth_img
-
     def recon_vers(self, param_lst, roi_box_lst, **kvs):
+        """Reconstruct 3D vertices from predicted parameters.
+
+        Args:
+            param_lst: List of predicted parameters.
+            roi_box_lst: List of ROI boxes for each face.
+            **kvs: Additional keyword arguments.
+                - dense_flag (bool): If True, use full dense BFM (53,489 vertices).
+                                     If False, use sparse keypoints (38,365 vertices).
+
+        Returns:
+            ver_lst: List of 3D vertex arrays with shape (3, num_vertices).
+        """
         size = self.size
+        dense_flag = kvs.get('dense_flag', False)
         ver_lst = []
 
-        for param, roi_box in zip(param_lst, roi_box_lst):
+        for idx, (param, roi_box) in enumerate(zip(param_lst, roi_box_lst)):
             R, offset, alpha_shp, alpha_exp = _parse_param(param)
 
-            pts3d = R @ (self.u_base + self.w_shp_base @ alpha_shp + self.w_exp_base @ alpha_exp). \
-                reshape(3, -1, order='F') + offset
+            if dense_flag:
+                # Dense reconstruction: use full BFM bases (53,489 vertices)
+                pts3d = R @ (self.u_dense + self.w_shp_dense @ alpha_shp + self.w_exp_dense @ alpha_exp). \
+                    reshape(3, -1, order='F') + offset
+            else:
+                # Sparse reconstruction: use keypoints-only bases (38,365 vertices)
+                pts3d = R @ (self.u_base + self.w_shp_base @ alpha_shp + self.w_exp_base @ alpha_exp). \
+                    reshape(3, -1, order='F') + offset
 
             pts3d = similar_transform(pts3d, roi_box, size)
             ver_lst.append(pts3d)

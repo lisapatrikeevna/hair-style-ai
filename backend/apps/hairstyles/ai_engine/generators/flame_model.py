@@ -19,6 +19,7 @@ Reference:
 import os
 import torch
 import torch.nn as nn
+import numpy as np
 
 from .flame_utils import load_pkl, to_tensor, batch_rodrigues
 
@@ -64,7 +65,6 @@ class FLAMEModel(nn.Module):
         if actual_n_exp < n_exp:
             print(f"[FLAME Model] WARNING: requested n_exp={n_exp} but only {actual_n_exp} available. Padding with zeros.")
         exp_part = full_shapedirs[:, :, expr_start:expr_end].reshape(v_count * 3, actual_n_exp)
-        # Если нужно, паддим до n_exp нулями
         if actual_n_exp < n_exp:
             pad = torch.zeros(v_count * 3, n_exp - actual_n_exp)
             exp_part = torch.cat([exp_part, pad], dim=1)
@@ -83,12 +83,12 @@ class FLAMEModel(nn.Module):
         joint_template = to_tensor(data["J_regressor"] @ data["v_template"].reshape(-1, 3))
         self.register_buffer("joint_template", joint_template)  # (5, 3)
 
-        # --- Faces ---
-        self.register_buffer("faces", to_tensor(data["f"], dtype=torch.long))  # (9976, 3)
-
         # --- Kinematic tree ---
         kintree = to_tensor(data["kintree_table"], dtype=torch.long)  # (2, 5)
         self.register_buffer("kintree_table", kintree)
+
+        # # --- Faces ---
+        self.register_buffer("faces", to_tensor(data["f"], dtype=torch.long))  # (9976, 3)
 
     def forward(self, betas: torch.Tensor = None, expression: torch.Tensor = None, pose: torch.Tensor = None) -> torch.Tensor:
         device = self.mean_template.device
@@ -119,23 +119,18 @@ class FLAMEModel(nn.Module):
         # 2. Pose corrective blendshapes (lrotmin)
         num_joints = self.kintree_table.shape[1]  # 5
 
-        # Axis-angle -> rotation matrices для всех джоинтов
-        # pose: (B, 6) — первые 3 для root, следующие 3 для jaw
+        # Axis-angle -> rotation matrices for oll joints
+        # pose: (B, 6) — first 3 for root, next 3 for jaw
         rot_vecs = torch.zeros(batch_size, num_joints * 3, device=device)
-        # Индекс 1 — Голова (Head), отдаем ей первые 3 параметра pose
         rot_vecs[:, 3:6] = pose[:, :3]
-        # Индекс 2 — Челюсть (Jaw), отдаем ей следующие 3 параметра pose
         rot_vecs[:, 6:9] = pose[:, 3:6]
 
         rot_mat = batch_rodrigues(rot_vecs.view(batch_size * num_joints, 3))  # (B*J, 3, 3)
         rot_mat = rot_mat.view(batch_size, num_joints, 3, 3)                  # (B, J, 3, 3)
 
-        # lrotmin: (rot_mat - I) для всех джоинтов кроме root
-        # Стандарт FLAME: исключаем joint 0 (root), берём остальные 4
         identity = torch.eye(3, device=device, dtype=rot_mat.dtype)
         rot_diff = (rot_mat[:, 1:] - identity).view(batch_size, -1)  # (B, 4*9) = (B, 36)
 
-        # posedirs: (V, 3, 36) — используем einsum напрямую
         pose_blends = torch.einsum("vjd,bd->bvj", self.posedirs, rot_diff)  # (B, V, 3)
 
         v_posed = v_shaped + pose_blends  # (B, V, 3)

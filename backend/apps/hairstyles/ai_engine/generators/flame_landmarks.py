@@ -131,10 +131,8 @@ class FLAMEMaskLoader:
     def get_mask(self, mask_name: str) -> torch.Tensor:
         """
         Get a boolean mask for a specific region.
-
         Args:
             mask_name: Name of the mask (e.g., "face", "eye", "mouth").
-
         Returns:
             Boolean tensor of shape (V...).
         """
